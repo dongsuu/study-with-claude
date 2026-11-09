@@ -1,0 +1,21 @@
+# dependencies
+node_modules/
+
+# build / cache
+dist/
+.next/
+coverage/
+*.tsbuildinfo
+
+# env
+.env*
+!.env.example
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# 개인 학습 설정 (git에 올리지 않음)
+CLAUDE.local.md
+private/
