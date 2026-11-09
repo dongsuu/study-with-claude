@@ -1,0 +1,709 @@
+<meta charset="utf-8">
+<title>실행 컨텍스트 심화</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: 학습 노트 — 왼쪽 고정 목차 + 본문, 단계별 실행 시뮬레이터는 본문 폭 안에서 2열 */
+:root {
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --fg: #1a1e26;
+  --muted: #5a6271;
+  --line: #dde1e7;
+  --accent: #8a6400;
+  --mark: #f7df1e;
+  --mark-fg: #1a1e26;
+  --code-bg: #eef0f3;
+  --code-fg: #1f2430;
+  --cur: #fff3b0;
+  --syn-kw: #a1336b;
+  --syn-str: #2f7a3a;
+  --syn-num: #b4540a;
+  --syn-com: #7b8494;
+  --syn-fn: #2453a6;
+  --ok: #2f7a3a;
+  --err: #b42318;
+  --uninit: #b42318;
+  --memo-bg: #fffbe3;
+  --memo-line: #ebdf9e;
+  --font-body: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12151b; --surface: #191d25; --fg: #e4e7ec; --muted: #98a1b0; --line: #2a303b;
+    --accent: #f2cf3b; --mark: #f2cf3b; --mark-fg: #12151b;
+    --code-bg: #0d1015; --code-fg: #d9dde4; --cur: #3a3418;
+    --syn-kw: #f08bb8; --syn-str: #8fd19e; --syn-num: #f5a35c; --syn-com: #6f7888; --syn-fn: #8ab4f8;
+    --ok: #8fd19e; --err: #ff8a80; --uninit: #ff8a80; --memo-bg: #23211a; --memo-line: #4a4326;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12151b; --surface: #191d25; --fg: #e4e7ec; --muted: #98a1b0; --line: #2a303b;
+  --accent: #f2cf3b; --mark: #f2cf3b; --mark-fg: #12151b;
+  --code-bg: #0d1015; --code-fg: #d9dde4; --cur: #3a3418;
+  --syn-kw: #f08bb8; --syn-str: #8fd19e; --syn-num: #f5a35c; --syn-com: #6f7888; --syn-fn: #8ab4f8;
+  --ok: #8fd19e; --err: #ff8a80; --uninit: #ff8a80; --memo-bg: #23211a; --memo-line: #4a4326;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.75;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 40px 80px;
+}
+.wrap { max-width: 1340px; margin: 0 auto; display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 48px; }
+main { min-width: 0; max-width: 1060px; }
+
+nav.toc { position: sticky; top: calc(24px + env(safe-area-inset-top, 0px)); align-self: start; font-size: 14px; }
+nav.toc .label { font-family: var(--font-mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+nav.toc ol { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 6px; }
+nav.toc a { color: var(--muted); text-decoration: none; }
+nav.toc a:hover, nav.toc a:focus-visible { color: var(--fg); }
+
+header.session { display: grid; gap: 12px; padding-bottom: 28px; border-bottom: 1px solid var(--line); margin-bottom: 36px; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px; font-family: var(--font-mono); font-size: 12px; }
+.chip { padding: 2px 8px; border: 1px solid var(--line); border-radius: 4px; color: var(--muted); background: var(--surface); }
+.chip.js { background: var(--mark); color: var(--mark-fg); border-color: transparent; font-weight: 600; }
+h1 { font-size: clamp(28px, 4.5vw, 38px); line-height: 1.25; margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
+.lede { margin: 0; color: var(--muted); }
+.lede a { color: var(--accent); }
+
+section { padding-block: 8px 32px; scroll-margin-top: 24px; }
+h2 { font-size: 23px; line-height: 1.35; margin: 24px 0 14px; text-wrap: balance; display: flex; gap: 12px; align-items: baseline; }
+h2 .n { font-family: var(--font-mono); font-size: 14px; color: var(--accent); font-weight: 600; }
+h3 { font-size: 17px; margin: 28px 0 8px; }
+p { margin: 0 0 14px; }
+ul, ol.steps { margin: 0 0 14px; padding-left: 22px; }
+li { margin-bottom: 6px; }
+code { font-family: var(--font-mono); font-size: .88em; background: var(--code-bg); padding: 1px 5px; border-radius: 3px; }
+mark { background: var(--mark); color: var(--mark-fg); padding: 0 3px; border-radius: 2px; }
+.small { font-size: 14px; color: var(--muted); }
+
+pre { margin: 0 0 16px; background: var(--code-bg); border: 1px solid var(--line); border-radius: 6px; overflow-x: auto; }
+pre code { display: block; padding: 14px 16px; background: none; font-size: 13.5px; line-height: 1.65; color: var(--code-fg); }
+.hljs-keyword, .hljs-built_in, .hljs-literal { color: var(--syn-kw); }
+.hljs-string { color: var(--syn-str); }
+.hljs-number { color: var(--syn-num); }
+.hljs-comment { color: var(--syn-com); font-style: italic; }
+.hljs-title, .hljs-title.function_ { color: var(--syn-fn); }
+
+.key { padding: 14px 18px; background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--mark); border-radius: 4px; margin: 0 0 18px; }
+.key p:last-child { margin: 0; }
+
+.table-wrap { overflow-x: auto; margin: 0 0 18px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 14px; min-width: 600px; }
+th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 12px; font-family: var(--font-mono); letter-spacing: .04em; color: var(--muted); font-weight: 600; }
+tr:last-child td { border-bottom: 0; }
+td .op { display: block; font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+
+/* 3단계 타임라인 */
+.timeline { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 0 0 18px; }
+.stage { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; font-size: 14px; }
+.stage .t { display: block; font-family: var(--font-mono); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); font-weight: 600; margin-bottom: 4px; }
+.stage b { display: block; font-size: 15px; margin-bottom: 4px; }
+
+/* 바인딩 상태 머신 */
+.states { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 10px; }
+.state { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 10px 14px; font-size: 14px; flex: 1 1 140px; min-width: 0; }
+.state b { display: block; font-size: 15px; }
+.state.tdz { border-color: var(--uninit); }
+.state.tdz b { color: var(--uninit); }
+.state.ok { border-color: var(--ok); }
+.state.ok b { color: var(--ok); }
+.edge { font-family: var(--font-mono); font-size: 11px; color: var(--muted); text-align: center; line-height: 1.3; }
+.edge::after { content: " →"; color: var(--accent); }
+
+/* 오해 vs 사실 */
+.myths { display: grid; gap: 10px; margin: 0 0 18px; }
+.myth { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 0; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: var(--surface); font-size: 14px; }
+.myth > div { padding: 10px 14px; min-width: 0; }
+.myth .x { color: var(--muted); border-right: 1px solid var(--line); text-decoration: line-through; text-decoration-color: var(--err); }
+.myth .x::before { content: "오해  "; font-family: var(--font-mono); font-size: 11px; color: var(--err); text-decoration: none; display: inline-block; margin-right: 6px; }
+.myth .o::before { content: "사실  "; font-family: var(--font-mono); font-size: 11px; color: var(--ok); margin-right: 6px; }
+
+details.result { margin: -8px 0 18px; font-size: 14px; }
+details.result summary { cursor: pointer; color: var(--accent); font-family: var(--font-mono); font-size: 12.5px; list-style: none; display: inline-flex; gap: 6px; align-items: center; }
+details.result summary::-webkit-details-marker { display: none; }
+details.result summary::before { content: "▸"; transition: transform .15s; }
+details.result[open] summary::before { transform: rotate(90deg); }
+details.result .out { margin-top: 8px; padding: 10px 14px; border-left: 3px solid var(--line); background: var(--surface); font-family: var(--font-mono); font-size: 13px; white-space: pre-wrap; }
+.out .e { color: var(--err); }
+.out .o { color: var(--ok); }
+.out .why { display: block; margin-top: 6px; font-family: var(--font-body); color: var(--muted); white-space: normal; }
+
+/* 단계별 실행 시뮬레이터 */
+.sim { border: 1px solid var(--line); border-radius: 8px; background: var(--surface); margin: 0 0 18px; overflow: hidden; }
+.sim-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.sim-phase { font-family: var(--font-mono); font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 4px; background: var(--mark); color: var(--mark-fg); }
+.sim-phase.exec { background: var(--code-bg); color: var(--fg); border: 1px solid var(--line); }
+.sim-ctrl { display: flex; gap: 8px; align-items: center; font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+.sim-ctrl button { font: inherit; font-size: 13px; padding: 5px 12px; border-radius: 5px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); cursor: pointer; }
+.sim-ctrl button:disabled { opacity: .4; cursor: default; }
+.sim-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.sim-code { background: var(--code-bg); padding: 10px 0; font-family: var(--font-mono); font-size: 13px; line-height: 1.75; overflow-x: auto; border-right: 1px solid var(--line); }
+.sim-code .ln { display: flex; gap: 12px; padding: 0 14px; white-space: pre; color: var(--code-fg); }
+.sim-code .ln .no { color: var(--syn-com); width: 1.2em; text-align: right; flex: none; user-select: none; }
+.sim-code .ln.cur { background: var(--cur); }
+.sim-state { padding: 12px 14px; display: grid; gap: 12px; align-content: start; min-width: 0; }
+.sim-label { font-family: var(--font-mono); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+.stack { display: flex; flex-direction: column-reverse; gap: 4px; }
+.stack .frame { font-family: var(--font-mono); font-size: 12.5px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); }
+.stack .frame:last-child { border-color: var(--accent); }
+.stack .empty, .outbox .empty { font-size: 12.5px; color: var(--muted); }
+.envs { display: grid; gap: 8px; }
+.env { border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; background: var(--bg); }
+.env .h { display: flex; justify-content: space-between; gap: 8px; font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); margin-bottom: 4px; flex-wrap: wrap; }
+.env .row { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 10px; font-family: var(--font-mono); font-size: 12.5px; padding: 1px 4px; border-radius: 3px; }
+.env .row .v { overflow-wrap: anywhere; }
+.env .row .k { color: var(--muted); font-size: 11px; grid-column: 2; }
+.env .row.uninit .v { color: var(--uninit); }
+.env .row.changed { background: var(--cur); }
+.outbox { font-family: var(--font-mono); font-size: 12.5px; padding: 6px 10px; background: var(--code-bg); border-radius: 4px; min-height: 30px; }
+.sim-note { padding: 12px 14px; border-top: 1px solid var(--line); font-size: 14px; line-height: 1.7; }
+.sim-note p { margin: 0 0 6px; }
+.sim-note p:last-child { margin: 0; }
+
+a { color: var(--accent); }
+button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.next { margin-top: 32px; padding-top: 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; }
+
+@media (max-width: 1180px) {
+  .wrap { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  nav.toc { position: static; margin-bottom: 24px; }
+}
+@media (max-width: 640px) {
+  .sim-body { grid-template-columns: minmax(0, 1fr); }
+  .sim-code { border-right: 0; border-bottom: 1px solid var(--line); }
+  .timeline { grid-template-columns: minmax(0, 1fr); }
+  .myth { grid-template-columns: minmax(0, 1fr); }
+  .myth .x { border-right: 0; border-bottom: 1px solid var(--line); }
+  .states { flex-direction: column; align-items: stretch; }
+  .edge::after { content: " ↓"; }
+}
+@media (prefers-reduced-motion: reduce) {
+  details.result summary::before { transition: none; }
+}
+
+/* 섹션별 메모: 넓은 화면에서는 본문 옆, 좁으면 섹션 위 */
+.sec { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 28px; align-items: start; }
+.sec-body { min-width: 0; }
+.memo { position: sticky; top: calc(20px + env(safe-area-inset-top, 0px)); margin-top: 28px; display: grid; gap: 6px; padding: 10px 12px 12px; background: var(--memo-bg); border: 1px solid var(--memo-line); border-radius: 6px; }
+.memo.has, .memo:focus-within { border-color: var(--accent); }
+.memo label { display: flex; justify-content: space-between; gap: 8px; font-family: var(--font-mono); font-size: 11px; letter-spacing: .06em; color: var(--muted); }
+.memo .st { letter-spacing: 0; }
+.memo textarea { width: 100%; min-height: 96px; resize: vertical; border: 0; padding: 0; background: transparent; color: var(--fg); font-family: var(--font-body); font-size: 13.5px; line-height: 1.6; }
+.memo textarea:focus-visible { outline: none; }
+@media (max-width: 860px) {
+  .sec { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .memo { position: static; margin-top: 0; margin-bottom: 8px; }
+}
+</style>
+
+<div class="wrap">
+  <nav class="toc" aria-label="목차">
+    <div class="label">JS · W1 · S1 심화</div>
+    <ol>
+      <li><a href="#big">1. 큰 그림: 3단계</a></li>
+      <li><a href="#terms">2. 선언 · 바인딩 · 초기화 · 할당</a></li>
+      <li><a href="#split">3. 선언문은 두 번 일한다</a></li>
+      <li><a href="#sim">4. 한 줄씩 따라가기</a></li>
+      <li><a href="#inst">5. 선언 인스턴스화 순서</a></li>
+      <li><a href="#ops">6. 읽기 · 쓰기 · typeof 규칙</a></li>
+      <li><a href="#myths">7. 오해 정리</a></li>
+      <li><a href="#check">8. 셀프 체크</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <header class="session">
+      <div class="meta">
+        <span class="chip js">JS</span>
+        <span class="chip">Week 1 · 스코프 · 실행 컨텍스트 · 클로저</span>
+        <span class="chip">Session 1 · 심화</span>
+      </div>
+      <h1>실행 컨텍스트 심화: 바인딩이 생기고 채워지는 순간</h1>
+      <p class="lede">1편(<a href="https://claude.ai/artifact/6LUm6NYZxYii2w12rEifRQ" target="_blank" rel="noopener">실행 컨텍스트와 TDZ</a>)에서 결론만 다뤘던 내용을, 엔진이 실제로 하는 동작 단위로 쪼개서 봅니다. 이 페이지를 읽고 나면 "호이스팅"이라는 단어 없이도 모든 결과를 설명할 수 있어야 합니다.</p>
+    </header>
+
+    <section id="big">
+      <h2><span class="n">01</span>큰 그림: 코드는 3단계를 거쳐 실행된다</h2>
+      <div class="timeline">
+        <div class="stage"><span class="t">Stage 1</span><b>파싱</b>코드 전체를 읽고 구조를 파악합니다. 어떤 스코프에 어떤 선언이 있는지 이 시점에 이미 다 압니다. 문법 오류가 있으면 <strong>한 줄도 실행되지 않습니다.</strong></div>
+        <div class="stage"><span class="t">Stage 2</span><b>선언 단계</b>실행 컨텍스트를 만들고, 그 스코프의 선언들을 Environment Record에 등록합니다. 스펙 용어로 <em>선언 인스턴스화(Declaration Instantiation)</em>입니다.</div>
+        <div class="stage"><span class="t">Stage 3</span><b>실행 단계</b>코드를 위에서부터 한 줄씩 평가합니다. 값을 계산하고, 할당하고, 함수를 호출합니다.</div>
+      </div>
+      <p>Stage 2와 3은 <strong>스코프마다 반복</strong>됩니다. 전역 코드가 시작될 때 한 번, 함수가 호출될 때마다 한 번, 블록 <code>{ }</code>에 들어갈 때마다 한 번(블록 안에 let/const/class가 있을 때)씩 일어납니다.</p>
+      <p>"호이스팅"은 Stage 2에서 일어난 일을 Stage 3에서 관찰했을 때 <em>마치 선언이 위로 올라간 것처럼 보이는 현상</em>에 붙인 별명일 뿐입니다. 스펙에는 hoisting이라는 동작이 없습니다.</p>
+
+<pre><code class="language-js">console.log('첫 줄');
+let a = 1;
+let a = 2; // 같은 스코프에 let 중복</code></pre>
+      <details class="result"><summary>결과 보기</summary><div class="out"><span class="e">SyntaxError: Identifier 'a' has already been declared</span><span class="why">'첫 줄'조차 출력되지 않습니다. 파싱(Stage 1)에서 실패했기 때문에 실행 단계에 들어가지도 못합니다.</span></div></details>
+    </section>
+
+    <section id="terms">
+      <h2><span class="n">02</span>용어 정리: 선언 · 바인딩 · 초기화 · 할당</h2>
+      <p>이 네 단어를 구분하지 못하면 모든 설명이 흐려집니다. 일상에서는 섞어 쓰지만, 엔진 입장에서는 전혀 다른 동작입니다.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>용어</th><th>뜻</th><th>엔진 입장에서</th></tr></thead>
+          <tbody>
+            <tr><td><strong>선언</strong></td><td>소스 코드에 적힌 <code>var x</code>, <code>let x</code>, <code>function f(){}</code> 같은 <em>문법 요소</em></td><td>파싱 때 발견되어 "이 스코프에는 x가 있다"는 정보가 됨</td></tr>
+            <tr><td><strong>바인딩</strong></td><td>Environment Record 안에 있는 <em>이름 → 값 슬롯</em> 하나</td><td>슬롯마다 "초기화됐는가", "바꿀 수 있는가(const 여부)" 상태를 가짐</td></tr>
+            <tr><td><strong>초기화</strong></td><td>바인딩에 <em>첫 값</em>을 넣는 것. 바인딩마다 딱 한 번</td><td>스펙의 <code>InitializeBinding</code>. 이것이 일어나야 읽고 쓸 수 있음</td></tr>
+            <tr><td><strong>할당</strong></td><td>이미 초기화된 바인딩의 값을 <em>바꾸는</em> 것. <code>x = 1</code></td><td>스펙의 <code>SetMutableBinding</code>. 초기화 전이면 에러, const면 에러</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>바인딩의 상태 변화</h3>
+      <div class="states" role="img" aria-label="바인딩 상태: 없음에서 생성되면 미초기화(TDZ), 초기화되면 초기화됨, 이후 할당으로 값 변경">
+        <div class="state"><b>없음</b>Environment Record에 이름이 없음</div>
+        <div class="edge">생성<br>Create…Binding</div>
+        <div class="state tdz"><b>미초기화 (TDZ)</b>슬롯은 있지만 값이 없음. 읽기·쓰기 모두 ReferenceError</div>
+        <div class="edge">초기화<br>InitializeBinding</div>
+        <div class="state ok"><b>초기화됨</b>값이 있음. 이후 할당으로 값 변경 가능 (const 제외)</div>
+      </div>
+      <p class="small">var와 function 선언은 선언 단계에서 <strong>생성과 초기화가 한 번에</strong> 일어나서 미초기화 상태를 거치지 않습니다. let/const/class만 미초기화 상태로 머물며, 그 구간이 TDZ입니다.</p>
+
+      <div class="key">
+        <p><strong>핵심.</strong> <code>var x = 1;</code>에서 <code>= 1</code>은 <strong>초기화가 아니라 할당</strong>입니다. x는 선언 단계에서 이미 <code>undefined</code>로 초기화되었기 때문입니다. 반면 <code>let x = 1;</code>의 <code>= 1</code>은 <strong>진짜 초기화</strong>입니다. 같은 모양의 코드가 다른 동작을 합니다.</p>
+      </div>
+    </section>
+
+    <section id="split">
+      <h2><span class="n">03</span>선언문 하나는 두 번 일한다</h2>
+      <p>선언문 한 줄은 선언 단계와 실행 단계에 걸쳐 <strong>두 번 처리</strong>됩니다. 각 단계에서 무슨 일이 일어나는지 나눠 보면, 결과를 외울 필요가 없어집니다.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>코드</th><th>선언 단계 (Stage 2)</th><th>실행 단계 (Stage 3, 그 줄에 도달했을 때)</th></tr></thead>
+          <tbody>
+            <tr><td><code>var x = 1;</code></td><td>바인딩 생성 + <code>undefined</code>로 초기화<span class="op">CreateMutableBinding + InitializeBinding(undefined)</span></td><td><code>1</code>을 <strong>할당</strong><span class="op">SetMutableBinding(x, 1)</span></td></tr>
+            <tr><td><code>var x;</code></td><td>위와 같음</td><td><strong>아무 일도 안 함</strong> (값을 undefined로 되돌리지 않음)</td></tr>
+            <tr><td><code>let x = 1;</code></td><td>바인딩 생성만<span class="op">CreateMutableBinding</span></td><td><code>1</code>로 <strong>초기화</strong> → 여기서 TDZ 끝<span class="op">InitializeBinding(x, 1)</span></td></tr>
+            <tr><td><code>let x;</code></td><td>바인딩 생성만</td><td><code>undefined</code>로 <strong>초기화</strong></td></tr>
+            <tr><td><code>const x = 1;</code></td><td>변경 불가 바인딩 생성만<span class="op">CreateImmutableBinding</span></td><td><code>1</code>로 초기화 (<code>const x;</code>는 파싱 단계 SyntaxError)</td></tr>
+            <tr><td><code>function f() {}</code></td><td>바인딩 생성 + <strong>함수 객체를 만들어서</strong> 초기화. 이때 <code>f.[[Environment]]</code> = 현재 환경<span class="op">InstantiateFunctionObject</span></td><td><strong>아무 일도 안 함</strong> (건너뜀)</td></tr>
+            <tr><td><code>var f = function () {};</code></td><td>var 규칙: <code>undefined</code>로 초기화</td><td>이 줄에서 <strong>함수 객체가 처음 만들어지고</strong> 할당됨</td></tr>
+            <tr><td><code>class C {}</code></td><td>바인딩 생성만 (let과 같음)</td><td>클래스 객체를 만들어 초기화</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>표의 함수 선언 행이 중요합니다. 함수 선언은 선언 단계에서 <strong>본문까지 완성된 함수 객체</strong>가 만들어집니다. "빈 함수가 먼저 들어가고 나중에 구현이 채워진다" 같은 중간 상태는 없습니다. 실행 단계에서 <code>function f() {}</code> 줄은 이미 처리된 줄로 보고 건너뜁니다.</p>
+    </section>
+
+    <section id="sim">
+      <h2><span class="n">04</span>한 줄씩 따라가기</h2>
+      <p><strong>다음</strong>을 누르며 실행 컨텍스트, Environment Record, 콜 스택이 어떻게 바뀌는지 보세요. 노란 행은 방금 바뀐 바인딩입니다. 키보드 ← → 로도 움직일 수 있습니다.</p>
+
+      <div class="sim" id="simulator">
+        <div class="sim-bar">
+          <span class="sim-phase" id="sim-phase">파싱</span>
+          <div class="sim-ctrl">
+            <button type="button" id="sim-prev" aria-label="이전 단계">← 이전</button>
+            <span id="sim-count" aria-live="polite">0 / 0</span>
+            <button type="button" id="sim-next" aria-label="다음 단계">다음 →</button>
+          </div>
+        </div>
+        <div class="sim-body">
+          <div class="sim-code" id="sim-code"></div>
+          <div class="sim-state">
+            <div><div class="sim-label">콜 스택 (위가 실행 중)</div><div class="stack" id="sim-stack"></div></div>
+            <div><div class="sim-label">Environment Records</div><div class="envs" id="sim-envs"></div></div>
+            <div><div class="sim-label">콘솔 출력</div><div class="outbox" id="sim-out"></div></div>
+          </div>
+        </div>
+        <div class="sim-note" id="sim-note"></div>
+      </div>
+    </section>
+
+    <section id="inst">
+      <h2><span class="n">05</span>선언 인스턴스화의 순서</h2>
+      <p>선언 단계 안에서도 처리 순서가 정해져 있습니다. 스펙(<em>FunctionDeclarationInstantiation</em>)을 학습용으로 단순화하면 이렇습니다.</p>
+
+      <h3>함수가 호출될 때</h3>
+      <ol class="steps">
+        <li><strong>매개변수</strong> 바인딩을 만들고 전달된 인자로 초기화합니다. 기본값이 있으면 <strong>왼쪽부터 하나씩</strong> 평가하며 초기화하므로, 아직 차례가 오지 않은 오른쪽 매개변수는 TDZ 상태입니다.</li>
+        <li>일반 함수라면 <code>arguments</code> 객체를 만듭니다. (화살표 함수는 없음)</li>
+        <li><strong>var 선언</strong>을 처리합니다. 같은 이름의 바인딩이 <strong>이미 있으면 건너뛰고</strong>, 없으면 만들어서 <code>undefined</code>로 초기화합니다.</li>
+        <li><strong>function 선언</strong>을 처리합니다. 함수 객체를 만들어 바인딩에 넣습니다. 이미 같은 이름이 있으면 <strong>값을 덮어씁니다.</strong></li>
+        <li><strong>let / const / class</strong> 바인딩을 만듭니다. 초기화는 하지 않습니다.</li>
+      </ol>
+      <p>3번과 4번의 규칙("var는 있으면 건너뜀, function은 덮어씀") 덕분에, 같은 이름의 var와 function이 있으면 <strong>소스상 순서와 관계없이</strong> 선언 단계가 끝난 시점의 값은 항상 함수입니다. 그다음 실행 단계에서 할당문을 만나야 비로소 다른 값으로 바뀝니다.</p>
+
+      <h3>전역 코드가 시작될 때</h3>
+      <p>함수와 거의 같지만, 먼저 <strong>충돌 검사</strong>를 합니다. let/const로 선언하려는 이름이 이미 전역에 있으면(다른 <code>&lt;script&gt;</code>에서 선언됐더라도) 그 스크립트는 코드를 하나도 실행하지 않고 SyntaxError로 끝납니다.</p>
+
+      <h3>블록에 들어갈 때</h3>
+      <p>블록 <code>{ }</code>에 진입하면 <strong>새 Declarative Environment Record</strong>가 만들어지고, <code>[[OuterEnv]]</code>는 블록을 감싼 환경을 가리킵니다. 블록 안의 let/const/class는 이 레코드에 미초기화 상태로 생성됩니다. 블록에는 새 <em>실행 컨텍스트</em>가 생기지 않고, 현재 실행 컨텍스트의 LexicalEnvironment만 잠시 이 레코드로 바뀌었다가 블록을 나가면 되돌아갑니다. var는 블록을 무시하고 가장 가까운 함수(또는 전역) 레코드에 등록됩니다.</p>
+
+<pre><code class="language-js">function demo() {
+  // demo의 Function ER: { flag: undefined }  ← var는 블록 밖 함수 레코드로
+  {
+    // 블록 ER: { inBlock: &lt;uninitialized&gt; }, [[OuterEnv]] → demo ER
+    let inBlock = 1;
+    var flag = true;
+  }
+  // 블록 ER은 사라지고 LexicalEnvironment가 demo ER로 복귀
+  return flag;
+}</code></pre>
+    </section>
+
+    <section id="ops">
+      <h2><span class="n">06</span>읽기 · 쓰기 · typeof 규칙</h2>
+      <p>실행 단계에서 식별자를 사용할 때 엔진은 먼저 현재 LexicalEnvironment부터 <code>[[OuterEnv]]</code>를 따라 올라가며 그 이름의 바인딩을 찾습니다(<em>ResolveBinding</em>). <strong>가장 먼저 찾은 바인딩 하나</strong>만 사용하고, 그 바인딩이 미초기화 상태라도 더 바깥을 찾지 않습니다. 이것이 shadowing과 TDZ가 만나는 지점입니다.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>상황</th><th>읽기 <code>x</code></th><th>쓰기 <code>x = 1</code></th><th><code>typeof x</code></th></tr></thead>
+          <tbody>
+            <tr><td>어디에도 바인딩 없음</td><td>ReferenceError<br><code>x is not defined</code></td><td>strict: ReferenceError<br>sloppy: 전역 객체에 프로퍼티 생성</td><td><code>'undefined'</code> (에러 아님)</td></tr>
+            <tr><td>찾았는데 미초기화 (TDZ)</td><td>ReferenceError<br><code>Cannot access 'x' before initialization</code></td><td>ReferenceError (같은 메시지)</td><td>ReferenceError</td></tr>
+            <tr><td>찾았고 초기화됨 (let/var)</td><td>값</td><td>그 바인딩의 값이 바뀜</td><td>값의 타입</td></tr>
+            <tr><td>찾았고 초기화됨 (const)</td><td>값</td><td>TypeError<br><code>Assignment to constant variable.</code></td><td>값의 타입</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>두 ReferenceError의 메시지가 다르다는 점은 엔진이 "바인딩이 없다"와 "바인딩은 있는데 초기화 전이다"를 구분한다는 뜻입니다. 쓰기는 바인딩을 <strong>찾은 레코드</strong>의 값을 바꾸며, 현재 레코드에 새 바인딩을 만들지 않습니다.</p>
+    </section>
+
+    <section id="myths">
+      <h2><span class="n">07</span>흔한 오해 정리</h2>
+      <div class="myths">
+        <div class="myth"><div class="x">호이스팅은 선언을 코드 맨 위로 옮기는 것</div><div class="o">코드는 그대로이고, 선언 단계에서 바인딩이 먼저 등록될 뿐이다</div></div>
+        <div class="myth"><div class="x">let/const는 호이스팅되지 않는다</div><div class="o">바인딩은 스코프 시작 시점에 생성된다. 초기화만 늦다</div></div>
+        <div class="myth"><div class="x">초기화되기 전 변수는 undefined다</div><div class="o">var만 선언 단계에서 undefined로 초기화된다. let/const/class와 매개변수는 초기화 전에 접근하면 ReferenceError다</div></div>
+        <div class="myth"><div class="x">함수 선언은 빈 함수로 먼저 들어가고, 실행 단계에서 구현이 채워진다</div><div class="o">선언 단계에서 완성된 함수 객체로 초기화된다. 실행 단계에서 그 줄은 건너뛴다</div></div>
+        <div class="myth"><div class="x"><code>var x = 1</code>의 <code>= 1</code>은 초기화다</div><div class="o">이미 undefined로 초기화된 바인딩에 대한 할당이다</div></div>
+        <div class="myth"><div class="x">TDZ는 선언문보다 위에 있는 코드 영역이다</div><div class="o">TDZ는 시간 구간이다. 선언문보다 위에 적힌 함수라도 선언문 실행 후에 호출되면 문제없다</div></div>
+        <div class="myth"><div class="x">실행 컨텍스트는 함수를 정의할 때 만들어진다</div><div class="o">호출할 때마다 새로 만들어진다. 정의할 때는 <code>[[Environment]]</code>만 저장된다</div></div>
+      </div>
+    </section>
+
+    <section id="check">
+      <h2><span class="n">08</span>셀프 체크</h2>
+      <p>먼저 답을 생각하고, 위 표의 어느 행으로 설명되는지 말해 본 뒤 열어 보세요. (문제 세트와는 다른 문제입니다)</p>
+
+<pre><code class="language-js">// A
+x = 1;
+let x;</code></pre>
+      <details class="result"><summary>결과 보기</summary><div class="out"><span class="e">ReferenceError: Cannot access 'x' before initialization</span><span class="why">쓰기도 TDZ 검사를 받습니다. let x;는 실행 단계에서 그 줄에 도달해야 undefined로 초기화되는데, 할당이 먼저 실행됐습니다.</span></div></details>
+
+<pre><code class="language-js">// B
+function outer() {
+  return typeof inner;
+  function inner() {}
+}
+console.log(outer());</code></pre>
+      <details class="result"><summary>결과 보기</summary><div class="out"><span class="o">'function'</span><span class="why">outer 호출 시 선언 단계에서 inner가 함수 객체로 초기화됩니다. return 뒤에 있어서 실행 단계에서는 도달하지 않지만, 선언 단계는 실행 흐름과 무관합니다.</span></div></details>
+
+<pre><code class="language-js">// C
+var v = 'outer';
+function test() {
+  console.log(v);
+  if (false) {
+    var v = 'never';
+  }
+}
+test();</code></pre>
+      <details class="result"><summary>결과 보기</summary><div class="out"><span class="o">undefined</span><span class="why">if 블록은 실행되지 않지만, var는 블록을 무시하고 test의 Function ER에 선언 단계에서 등록됩니다. 그래서 바깥 v를 가립니다. 선언 단계는 조건문이 참인지 보지 않습니다.</span></div></details>
+
+<pre><code class="language-js">// D
+let total = 0;
+function addAll() {
+  total = total + count;
+  let count = 5;
+}
+addAll();</code></pre>
+      <details class="result"><summary>결과 보기</summary><div class="out"><span class="e">ReferenceError: Cannot access 'count' before initialization</span><span class="why">total은 바깥 전역 ER에서 찾고 문제없이 읽힙니다. count는 addAll의 ER에 이미 생성되어 있지만 아직 미초기화 상태입니다.</span></div></details>
+
+      <p class="next">이해가 됐다면 문제 세트로 돌아가세요: <code>js/01-scope-closure/s1-predict</code> → <code>s1-environment</code>. 특히 문제 2는 이 페이지의 3장, 5장, 6장 표를 코드로 옮기는 작업입니다.</p>
+    </section>
+  </main>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>
+  if (window.hljs) hljs.highlightAll();
+
+  const CODE = [
+    "var greeting = 'hi';",
+    "let count = 0;",
+    "function add(n) {",
+    "  var result = count + n;",
+    "  return result;",
+    "}",
+    "count = add(5);",
+    "console.log(greeting, count);",
+  ];
+
+  const G = 'Global ER';
+  const fnAdd = 'ƒ add  [[Environment]] → Global ER';
+
+  // rows: [이름, 값, 설명, 상태]  상태: 'u' 미초기화, 'c' 방금 바뀜
+  const STEPS = [
+    {
+      phase: '파싱', line: null, stack: [], envs: [], out: [],
+      note: '<p>엔진이 코드 전체를 파싱합니다. 아직 아무것도 실행되지 않았고, 콜 스택도 비어 있습니다.</p><p>하지만 엔진은 이미 전역 스코프에 <code>greeting</code>(var), <code>count</code>(let), <code>add</code>(function)가 선언되어 있다는 것을 압니다.</p>',
+    },
+    {
+      phase: '선언 단계 · 전역', line: null, stack: ['전역 실행 컨텍스트'], out: [],
+      envs: [{ name: G, outer: 'null', rows: [
+        ['greeting', 'undefined', 'var · 생성 + undefined로 초기화', 'c'],
+        ['count', '<uninitialized>', 'let · 생성만 (TDZ 시작)', 'cu'],
+        ['add', fnAdd, 'function · 생성 + 함수 객체로 초기화', 'c'],
+      ] }],
+      note: '<p>전역 실행 컨텍스트가 콜 스택에 올라가고, 선언 인스턴스화가 일어납니다. 아직 1번 줄도 실행되지 않았습니다.</p><p>세 바인딩의 상태가 모두 다릅니다. <code>add</code>는 이 시점에 이미 <strong>완성된 함수 객체</strong>이고, 자신이 정의된 환경(Global ER)을 <code>[[Environment]]</code>에 저장했습니다.</p>',
+    },
+    {
+      phase: '실행 단계 · 전역', line: 1, stack: ['전역 실행 컨텍스트'], out: [],
+      envs: [{ name: G, outer: 'null', rows: [
+        ['greeting', "'hi'", 'var · 할당됨', 'c'],
+        ['count', '<uninitialized>', 'let · TDZ', 'u'],
+        ['add', fnAdd, 'function', ''],
+      ] }],
+      note: "<p>1번 줄: <code>greeting</code>에 <code>'hi'</code>를 <strong>할당</strong>합니다. 이미 undefined로 초기화되어 있었으므로 초기화가 아니라 할당(SetMutableBinding)입니다.</p>",
+    },
+    {
+      phase: '실행 단계 · 전역', line: 2, stack: ['전역 실행 컨텍스트'], out: [],
+      envs: [{ name: G, outer: 'null', rows: [
+        ['greeting', "'hi'", 'var', ''],
+        ['count', '0', 'let · 초기화됨 (TDZ 끝)', 'c'],
+        ['add', fnAdd, 'function', ''],
+      ] }],
+      note: '<p>2번 줄: let 선언문에 도달해 <code>count</code>를 <code>0</code>으로 <strong>초기화</strong>(InitializeBinding)합니다. 이 순간 TDZ가 끝납니다.</p><p>이 줄보다 먼저 <code>count</code>를 읽거나 썼다면 ReferenceError였습니다.</p>',
+    },
+    {
+      phase: '실행 단계 · 전역', line: 3, stack: ['전역 실행 컨텍스트'], out: [],
+      envs: [{ name: G, outer: 'null', rows: [
+        ['greeting', "'hi'", 'var', ''],
+        ['count', '0', 'let', ''],
+        ['add', fnAdd, 'function', ''],
+      ] }],
+      note: '<p>3~6번 줄: 함수 선언문입니다. 실행 단계에서는 <strong>아무 일도 하지 않고 건너뜁니다.</strong> 함수 객체는 선언 단계에서 이미 만들어졌습니다.</p>',
+    },
+    {
+      phase: '선언 단계 · add 호출', line: 7, stack: ['전역 실행 컨텍스트', 'add 실행 컨텍스트'], out: [],
+      envs: [
+        { name: 'add ER', outer: 'Global ER (add.[[Environment]])', rows: [
+          ['n', '5', '매개변수 · 인자로 초기화', 'c'],
+          ['result', 'undefined', 'var · 생성 + undefined로 초기화', 'c'],
+        ] },
+        { name: G, outer: 'null', rows: [
+          ['greeting', "'hi'", 'var', ''],
+          ['count', '0', 'let', ''],
+          ['add', fnAdd, 'function', ''],
+        ] },
+      ],
+      note: '<p>7번 줄: 할당문의 오른쪽 <code>add(5)</code>를 먼저 평가합니다. <code>add</code>를 찾아 호출하면 <strong>새 실행 컨텍스트</strong>가 콜 스택에 올라갑니다.</p><p>새 Function ER이 만들어지고 선언 단계가 다시 일어납니다. 매개변수 <code>n</code>이 먼저 인자로 초기화되고, var <code>result</code>가 undefined로 초기화됩니다. 이 레코드의 <code>[[OuterEnv]]</code>는 호출한 곳이 아니라 <code>add.[[Environment]]</code>, 즉 Global ER입니다.</p>',
+    },
+    {
+      phase: '실행 단계 · add', line: 4, stack: ['전역 실행 컨텍스트', 'add 실행 컨텍스트'], out: [],
+      envs: [
+        { name: 'add ER', outer: 'Global ER', rows: [
+          ['n', '5', '매개변수', ''],
+          ['result', '5', 'var · 할당됨', 'c'],
+        ] },
+        { name: G, outer: 'null', rows: [
+          ['greeting', "'hi'", 'var', ''],
+          ['count', '0', 'let', ''],
+          ['add', fnAdd, 'function', ''],
+        ] },
+      ],
+      note: '<p>4번 줄: <code>count + n</code>을 평가합니다.</p><p><code>count</code>는 add ER에 없으므로 <code>[[OuterEnv]]</code>를 따라 Global ER에서 찾습니다 → <code>0</code>. <code>n</code>은 add ER에 있습니다 → <code>5</code>. 결과 <code>5</code>를 <code>result</code>에 할당합니다.</p>',
+    },
+    {
+      phase: '실행 단계 · add', line: 5, stack: ['전역 실행 컨텍스트'], out: [],
+      envs: [{ name: G, outer: 'null', rows: [
+        ['greeting', "'hi'", 'var', ''],
+        ['count', '0', 'let', ''],
+        ['add', fnAdd, 'function', ''],
+      ] }],
+      note: '<p>5번 줄: <code>5</code>를 반환하고 add 실행 컨텍스트가 콜 스택에서 <strong>빠집니다.</strong></p><p>add ER을 참조하는 곳이 더 없으므로 가비지 컬렉션 대상이 됩니다. 만약 add 안에서 만든 함수가 밖으로 반환되어 이 레코드를 <code>[[Environment]]</code>로 붙잡고 있다면 살아남습니다. 이것이 다음 세션의 주제인 클로저입니다.</p>',
+    },
+    {
+      phase: '실행 단계 · 전역', line: 7, stack: ['전역 실행 컨텍스트'], out: [],
+      envs: [{ name: G, outer: 'null', rows: [
+        ['greeting', "'hi'", 'var', ''],
+        ['count', '5', 'let · 할당됨', 'c'],
+        ['add', fnAdd, 'function', ''],
+      ] }],
+      note: '<p>7번 줄로 돌아와 반환값 <code>5</code>를 <code>count</code>에 <strong>할당</strong>합니다. count는 2번 줄에서 이미 초기화되었으므로 이번에는 할당입니다.</p>',
+    },
+    {
+      phase: '실행 단계 · 전역', line: 8, stack: ['전역 실행 컨텍스트'], out: ['hi 5'],
+      envs: [{ name: G, outer: 'null', rows: [
+        ['greeting', "'hi'", 'var', ''],
+        ['count', '5', 'let', ''],
+        ['add', fnAdd, 'function', ''],
+      ] }],
+      note: '<p>8번 줄: 두 식별자를 Global ER에서 찾아 출력합니다. 프로그램이 끝나면 전역 실행 컨텍스트도 콜 스택에서 빠집니다.</p><p>정리: 선언 단계는 <strong>전역에서 1번, add 호출에서 1번</strong> 일어났습니다. 함수를 3번 호출했다면 add의 선언 단계와 add ER도 3번 새로 만들어졌을 것입니다.</p>',
+    },
+  ];
+
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const hl = (s) => (window.hljs ? hljs.highlight(s, { language: 'javascript' }).value : esc(s));
+
+  $('sim-code').innerHTML = CODE.map(
+    (l, i) => `<div class="ln" data-line="${i + 1}"><span class="no">${i + 1}</span><span>${hl(l) || ' '}</span></div>`
+  ).join('');
+
+  let idx = 0;
+  function render() {
+    const s = STEPS[idx];
+    const phase = $('sim-phase');
+    phase.textContent = s.phase;
+    phase.classList.toggle('exec', s.phase.startsWith('실행'));
+    document.querySelectorAll('#sim-code .ln').forEach((el) => {
+      el.classList.toggle('cur', Number(el.dataset.line) === s.line);
+    });
+    $('sim-stack').innerHTML = s.stack.length
+      ? s.stack.map((f) => `<div class="frame">${esc(f)}</div>`).join('')
+      : '<span class="empty">(비어 있음)</span>';
+    $('sim-envs').innerHTML = s.envs.length
+      ? s.envs.map((e) => `
+        <div class="env">
+          <div class="h"><span>${esc(e.name)}</span><span>[[OuterEnv]] → ${esc(e.outer)}</span></div>
+          ${e.rows.map(([n, v, k, st]) => `
+            <div class="row${st.includes('u') ? ' uninit' : ''}${st.includes('c') ? ' changed' : ''}">
+              <span>${esc(n)}</span><span class="v">${esc(v)}</span><span class="k">${esc(k)}</span>
+            </div>`).join('')}
+        </div>`).join('')
+      : '<span class="empty">(아직 없음)</span>';
+    $('sim-out').innerHTML = s.out.length ? s.out.map(esc).join('<br>') : '<span class="empty">(없음)</span>';
+    $('sim-note').innerHTML = s.note;
+    $('sim-count').textContent = `${idx + 1} / ${STEPS.length}`;
+    $('sim-prev').disabled = idx === 0;
+    $('sim-next').disabled = idx === STEPS.length - 1;
+  }
+  $('sim-prev').addEventListener('click', () => { if (idx > 0) { idx--; render(); } });
+  $('sim-next').addEventListener('click', () => { if (idx < STEPS.length - 1) { idx++; render(); } });
+  document.addEventListener('keydown', (e) => {
+    if (e.target.closest('input, textarea')) return;
+    const sim = $('simulator').getBoundingClientRect();
+    if (sim.top > innerHeight || sim.bottom < 0) return;
+    if (e.key === 'ArrowRight') $('sim-next').click();
+    if (e.key === 'ArrowLeft') $('sim-prev').click();
+  });
+  render();
+</script>
+<script>
+  // 섹션별 메모: artifact db의 notes/<섹션 id>에 저장, 없으면 이 브라우저에만 저장
+  (() => {
+    const LKEY = 'memos:js-w1-s1-deep';
+    const boxes = new Map();
+    let notes = null;
+    let pushedLocal = false;
+
+    const readLocal = () => {
+      try { return JSON.parse(localStorage.getItem(LKEY) || '{}'); } catch (e) { return {}; }
+    };
+    const writeLocal = (id, text) => {
+      try {
+        const all = readLocal();
+        if (text.trim()) all[id] = text; else delete all[id];
+        localStorage.setItem(LKEY, JSON.stringify(all));
+      } catch (e) {}
+    };
+    const mark = (b) => b.aside.classList.toggle('has', b.ta.value.trim() !== '');
+
+    document.querySelectorAll('main section[id]').forEach((sec) => {
+      const body = document.createElement('div');
+      body.className = 'sec-body';
+      while (sec.firstChild) body.appendChild(sec.firstChild);
+      sec.classList.add('sec');
+      sec.appendChild(body);
+      if (sec.hasAttribute('data-nomemo')) return;
+
+      const h = sec.querySelector('h2')?.cloneNode(true);
+      h?.querySelector('.n')?.remove();
+      const aside = document.createElement('aside');
+      aside.className = 'memo';
+      aside.innerHTML = `<label for="memo-${sec.id}"><span>내 메모</span><span class="st" aria-live="polite"></span></label><textarea id="memo-${sec.id}" placeholder="헷갈리는 부분이나 질문을 적어 두세요"></textarea>`;
+      sec.appendChild(aside);
+
+      const b = {
+        ta: aside.querySelector('textarea'), st: aside.querySelector('.st'), aside,
+        title: h ? h.textContent.trim() : sec.id, timer: 0, saved: '', dirty: false, chain: Promise.resolve(),
+      };
+      boxes.set(sec.id, b);
+      b.ta.addEventListener('input', () => {
+        b.dirty = true;
+        mark(b);
+        b.st.textContent = '입력 중';
+        clearTimeout(b.timer);
+        b.timer = setTimeout(() => save(sec.id), 800);
+      });
+      b.ta.addEventListener('blur', () => {
+        if (!b.dirty) return;
+        clearTimeout(b.timer);
+        save(sec.id);
+      });
+    });
+
+    const local = readLocal();
+    boxes.forEach((b, id) => {
+      if (local[id]) { b.ta.value = local[id]; mark(b); }
+    });
+
+    function save(id) {
+      const b = boxes.get(id);
+      const text = b.ta.value;
+      b.dirty = false;
+      writeLocal(id, text);
+      if (!notes) { b.st.textContent = '이 브라우저에 저장됨'; return; }
+      if (text === b.saved) { b.st.textContent = '저장됨'; return; }
+      b.chain = b.chain.then(async () => {
+        try {
+          const ref = notes.doc(id);
+          if (text.trim()) await ref.set({ section: b.title, text, updatedAt: new Date().toISOString() });
+          else await ref.delete();
+          b.saved = text;
+          b.st.textContent = '저장됨';
+        } catch (e) {
+          b.st.textContent = e && e.code === 'quota_exceeded'
+            ? '저장 공간이 가득 찼어요'
+            : '서버 저장 실패 · 이 브라우저에만 저장됨';
+        }
+      });
+    }
+
+    if (!window.claude || typeof window.claude.use !== 'function') return;
+    window.claude.use('db').then((db) => {
+      if (!db) return;
+      notes = db.collection('notes');
+      notes.onSnapshot((snap) => {
+        snap.docs.forEach((d) => {
+          const b = boxes.get(d.id);
+          const data = d.data();
+          if (!b || !data) return;
+          const text = String(data.text ?? '');
+          b.saved = text;
+          if (!b.dirty && document.activeElement !== b.ta && b.ta.value !== text) {
+            b.ta.value = text;
+            writeLocal(d.id, text);
+            mark(b);
+          }
+        });
+        // 서버 연결 전에 이 브라우저에만 적어 둔 메모를 한 번 올림
+        if (!pushedLocal && !snap.metadata.fromCache) {
+          pushedLocal = true;
+          boxes.forEach((b, id) => {
+            if (b.ta.value.trim() && !snap.docs.some((d) => d.id === id)) save(id);
+          });
+        }
+      }, () => { notes = null; });
+    }, () => {});
+  })();
+</script>

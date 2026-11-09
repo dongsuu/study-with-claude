@@ -1,0 +1,535 @@
+<meta charset="utf-8">
+<title>실행 컨텍스트와 TDZ</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: 학습 노트 — 왼쪽 고정 목차 + 65자 폭 본문, 폰에서는 한 줄 */
+:root {
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --fg: #1a1e26;
+  --muted: #5a6271;
+  --line: #dde1e7;
+  --accent: #8a6400;
+  --mark: #f7df1e;
+  --mark-fg: #1a1e26;
+  --code-bg: #eef0f3;
+  --code-fg: #1f2430;
+  --syn-kw: #a1336b;
+  --syn-str: #2f7a3a;
+  --syn-num: #b4540a;
+  --syn-com: #7b8494;
+  --syn-fn: #2453a6;
+  --ok: #2f7a3a;
+  --err: #b42318;
+  --memo-bg: #fffbe3;
+  --memo-line: #ebdf9e;
+  --font-body: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12151b; --surface: #191d25; --fg: #e4e7ec; --muted: #98a1b0; --line: #2a303b;
+    --accent: #f2cf3b; --mark: #f2cf3b; --mark-fg: #12151b;
+    --code-bg: #0d1015; --code-fg: #d9dde4;
+    --syn-kw: #f08bb8; --syn-str: #8fd19e; --syn-num: #f5a35c; --syn-com: #6f7888; --syn-fn: #8ab4f8;
+    --ok: #8fd19e; --err: #ff8a80; --memo-bg: #23211a; --memo-line: #4a4326;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12151b; --surface: #191d25; --fg: #e4e7ec; --muted: #98a1b0; --line: #2a303b;
+  --accent: #f2cf3b; --mark: #f2cf3b; --mark-fg: #12151b;
+  --code-bg: #0d1015; --code-fg: #d9dde4;
+  --syn-kw: #f08bb8; --syn-str: #8fd19e; --syn-num: #f5a35c; --syn-com: #6f7888; --syn-fn: #8ab4f8;
+  --ok: #8fd19e; --err: #ff8a80; --memo-bg: #23211a; --memo-line: #4a4326;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.75;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 40px 80px;
+}
+.wrap {
+  max-width: 1340px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: 48px;
+}
+main { min-width: 0; max-width: 1060px; }
+
+/* TOC */
+nav.toc { position: sticky; top: calc(24px + env(safe-area-inset-top, 0px)); align-self: start; font-size: 14px; }
+nav.toc .label { font-family: var(--font-mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+nav.toc ol { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 6px; }
+nav.toc a { color: var(--muted); text-decoration: none; }
+nav.toc a:hover, nav.toc a:focus-visible { color: var(--fg); }
+
+/* Header */
+header.session { display: grid; gap: 12px; padding-bottom: 28px; border-bottom: 1px solid var(--line); margin-bottom: 36px; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px; font-family: var(--font-mono); font-size: 12px; }
+.chip { padding: 2px 8px; border: 1px solid var(--line); border-radius: 4px; color: var(--muted); background: var(--surface); }
+.chip.js { background: var(--mark); color: var(--mark-fg); border-color: transparent; font-weight: 600; }
+h1 { font-size: clamp(28px, 4.5vw, 38px); line-height: 1.25; margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
+.lede { margin: 0; color: var(--muted); }
+.flow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); }
+.flow b { color: var(--fg); font-weight: 500; }
+
+/* Sections */
+section { padding-block: 8px 32px; scroll-margin-top: 24px; }
+h2 { font-size: 23px; line-height: 1.35; margin: 24px 0 14px; text-wrap: balance; display: flex; gap: 12px; align-items: baseline; }
+h2 .n { font-family: var(--font-mono); font-size: 14px; color: var(--accent); font-weight: 600; }
+h3 { font-size: 17px; margin: 28px 0 8px; }
+p { margin: 0 0 14px; }
+ul { margin: 0 0 14px; padding-left: 20px; }
+li { margin-bottom: 6px; }
+strong { font-weight: 700; }
+code { font-family: var(--font-mono); font-size: .88em; background: var(--code-bg); padding: 1px 5px; border-radius: 3px; }
+mark { background: var(--mark); color: var(--mark-fg); padding: 0 3px; border-radius: 2px; }
+
+pre { margin: 0 0 16px; background: var(--code-bg); border: 1px solid var(--line); border-radius: 6px; overflow-x: auto; }
+pre code { display: block; padding: 14px 16px; background: none; font-size: 13.5px; line-height: 1.65; color: var(--code-fg); }
+.hljs-keyword, .hljs-built_in, .hljs-literal { color: var(--syn-kw); }
+.hljs-string { color: var(--syn-str); }
+.hljs-number { color: var(--syn-num); }
+.hljs-comment { color: var(--syn-com); font-style: italic; }
+.hljs-title, .hljs-title.function_ { color: var(--syn-fn); }
+
+/* Result reveal */
+details.result { margin: -8px 0 18px; font-size: 14px; }
+details.result summary { cursor: pointer; color: var(--accent); font-family: var(--font-mono); font-size: 12.5px; list-style: none; display: inline-flex; gap: 6px; align-items: center; }
+details.result summary::-webkit-details-marker { display: none; }
+details.result summary::before { content: "▸"; transition: transform .15s; }
+details.result[open] summary::before { transform: rotate(90deg); }
+details.result .out { margin-top: 8px; padding: 10px 14px; border-left: 3px solid var(--line); background: var(--surface); font-family: var(--font-mono); font-size: 13px; white-space: pre-wrap; }
+.out .e { color: var(--err); }
+.out .o { color: var(--ok); }
+.out .why { display: block; margin-top: 6px; font-family: var(--font-body); color: var(--muted); white-space: normal; }
+
+/* Callout */
+.key { padding: 14px 18px; background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--mark); border-radius: 4px; margin: 0 0 18px; }
+.key p:last-child { margin: 0; }
+
+/* Table */
+.table-wrap { overflow-x: auto; margin: 0 0 18px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 14px; min-width: 560px; }
+th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 12px; font-family: var(--font-mono); letter-spacing: .04em; color: var(--muted); font-weight: 600; }
+tr:last-child td { border-bottom: 0; }
+td.hl { font-weight: 700; }
+
+/* Env chain diagram */
+.chain { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; margin: 0 0 18px; }
+.er { flex: 1 1 140px; min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; font-family: var(--font-mono); font-size: 12.5px; }
+.er .t { font-size: 11px; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; display: block; margin-bottom: 6px; }
+.er .b { display: block; }
+.er.active { border-color: var(--accent); }
+.arrow { align-self: center; font-family: var(--font-mono); font-size: 11px; color: var(--muted); text-align: center; line-height: 1.3; }
+.arrow::after { content: " →"; color: var(--accent); }
+.null { align-self: center; font-family: var(--font-mono); font-size: 12.5px; color: var(--muted); }
+
+/* Phase compare */
+.phases { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 0 0 18px; }
+.phase { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; font-size: 14px; }
+.phase .t { font-family: var(--font-mono); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); font-weight: 600; }
+.phase dl { margin: 8px 0 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-family: var(--font-mono); font-size: 13px; }
+.phase dd { margin: 0; color: var(--muted); }
+
+/* Quiz */
+.quiz { display: grid; gap: 20px; }
+.q { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 18px 18px 16px; min-width: 0; }
+.q h3 { margin: 0 0 10px; display: flex; gap: 10px; align-items: baseline; }
+.q h3 .n { font-family: var(--font-mono); color: var(--accent); font-size: 14px; }
+.q label { display: block; font-size: 12px; font-family: var(--font-mono); color: var(--muted); margin: 4px 0 6px; letter-spacing: .04em; }
+textarea { width: 100%; min-height: 110px; resize: vertical; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); font-family: var(--font-mono); font-size: 13px; line-height: 1.6; }
+textarea:focus-visible, button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 4px; }
+button { font: inherit; font-size: 14px; font-weight: 500; padding: 9px 16px; border-radius: 6px; border: 1px solid var(--fg); background: var(--fg); color: var(--bg); cursor: pointer; }
+button.ghost { background: transparent; color: var(--fg); border-color: var(--line); }
+.status { font-size: 13px; color: var(--muted); }
+.next { margin-top: 32px; padding-top: 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; }
+
+@media (max-width: 1180px) {
+  .wrap { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  nav.toc { position: static; margin-bottom: 24px; }
+  nav.toc ol { grid-auto-flow: row; }
+}
+@media (max-width: 520px) {
+  .phases { grid-template-columns: minmax(0, 1fr); }
+  .chain { flex-direction: column; }
+  .arrow::after { content: " ↓"; }
+}
+@media (prefers-reduced-motion: reduce) {
+  details.result summary::before { transition: none; }
+}
+
+/* 섹션별 메모: 넓은 화면에서는 본문 옆, 좁으면 섹션 위 */
+.sec { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 28px; align-items: start; }
+.sec-body { min-width: 0; }
+.memo { position: sticky; top: calc(20px + env(safe-area-inset-top, 0px)); margin-top: 28px; display: grid; gap: 6px; padding: 10px 12px 12px; background: var(--memo-bg); border: 1px solid var(--memo-line); border-radius: 6px; }
+.memo.has, .memo:focus-within { border-color: var(--accent); }
+.memo label { display: flex; justify-content: space-between; gap: 8px; font-family: var(--font-mono); font-size: 11px; letter-spacing: .06em; color: var(--muted); margin: 0; }
+.memo .st { letter-spacing: 0; }
+.memo textarea { width: 100%; min-height: 96px; resize: vertical; border: 0; padding: 0; background: transparent; color: var(--fg); font-family: var(--font-body); font-size: 13.5px; line-height: 1.6; }
+.memo textarea:focus-visible { outline: none; }
+@media (max-width: 860px) {
+  .sec { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .memo { position: static; margin-top: 0; margin-bottom: 8px; }
+}
+</style>
+
+<div class="wrap">
+  <nav class="toc" aria-label="목차">
+    <div class="label">JS · W1 · S1</div>
+    <ol>
+      <li><a href="#context">1. 실행 컨텍스트</a></li>
+      <li><a href="#hoisting">2. 호이스팅의 실체</a></li>
+      <li><a href="#tdz">3. TDZ</a></li>
+      <li><a href="#global">4. 전역 스코프</a></li>
+      <li><a href="#quiz">확인 질문</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <header class="session">
+      <div class="meta">
+        <span class="chip js">JS</span>
+        <span class="chip">Week 1 · 스코프 · 실행 컨텍스트 · 클로저</span>
+        <span class="chip">Session 1 / 24</span>
+      </div>
+      <h1>실행 컨텍스트 · 호이스팅 · TDZ</h1>
+      <p class="lede">"코드가 실행되기 전에 엔진이 무엇을 준비하는가"를 스펙 수준으로 정리합니다. 다음 세션의 클로저는 여기서 다루는 <code>[[Environment]]</code> 하나로 설명됩니다.</p>
+      <div class="flow"><b>개념 20~30분</b> → 확인 질문 → 문제 풀이 → 피드백</div>
+    </header>
+
+    <section id="context">
+      <h2><span class="n">01</span>실행 컨텍스트란?</h2>
+      <p>JS 엔진이 코드를 실행하는 데 필요한 <strong>환경 정보를 묶은 단위</strong>입니다. 아래 시점에 만들어져 콜 스택에 쌓입니다.</p>
+      <ul>
+        <li>전역 코드나 모듈 코드를 평가할 때</li>
+        <li><strong>함수를 호출할 때</strong> (선언할 때가 아님)</li>
+        <li><code>eval</code>을 실행할 때</li>
+      </ul>
+      <p>ES2015 이후 스펙 기준으로 실행 컨텍스트가 가진 핵심 정보입니다.</p>
+      <ul>
+        <li><strong>LexicalEnvironment</strong>: 식별자와 값의 바인딩을 저장하는 <em>Environment Record</em>와, 바깥 레코드를 가리키는 <code>[[OuterEnv]]</code> 참조</li>
+        <li><strong>VariableEnvironment</strong>: <code>var</code> 선언용. 대부분 LexicalEnvironment와 같다고 봐도 됩니다.</li>
+        <li><strong>this 바인딩</strong>: 함수라면 Function Environment Record 안에 있습니다. (W2에서 자세히)</li>
+      </ul>
+      <p>식별자를 찾을 때는 현재 레코드부터 <code>[[OuterEnv]]</code>를 따라 바깥으로 올라갑니다. 이것이 <strong>스코프 체인</strong>입니다.</p>
+
+<pre><code class="language-js">const x = 'global';
+function outer() {
+  const y = 1;
+  function inner() {
+    const z = 2;
+    console.log(x, y, z);
+  }
+  inner();
+}
+outer();</code></pre>
+      <p style="font-size:14px;color:var(--muted);margin-bottom:8px"><code>inner()</code> 실행 중의 스코프 체인</p>
+      <div class="chain" role="img" aria-label="inner의 Environment Record에서 outer, 전역 순으로 OuterEnv가 연결되고 마지막은 null">
+        <div class="er active"><span class="t">inner ER</span><span class="b">z: 2</span></div>
+        <div class="arrow">[[OuterEnv]]</div>
+        <div class="er"><span class="t">outer ER</span><span class="b">y: 1</span><span class="b">inner: ƒ</span></div>
+        <div class="arrow">[[OuterEnv]]</div>
+        <div class="er"><span class="t">Global ER</span><span class="b">x: 'global'</span><span class="b">outer: ƒ</span></div>
+        <div class="null">→ null</div>
+      </div>
+
+      <div class="key">
+        <p><strong>핵심.</strong> 바깥 스코프는 "호출한 곳"이 아니라 <mark>"함수가 정의된 곳"</mark>입니다. 함수 객체는 만들어질 때 그 시점의 환경을 내부 슬롯 <code>[[Environment]]</code>에 저장해 둡니다. 호출되면 새 Environment Record를 만들고 그 <code>[[OuterEnv]]</code>를 저장해 둔 <code>[[Environment]]</code>로 연결합니다. 이것이 <strong>렉시컬 스코프</strong>이고, 다음 세션에서 다룰 <strong>클로저의 정체</strong>입니다.</p>
+      </div>
+
+<pre><code class="language-js">const x = 'global';
+function a() { console.log(x); }
+function b() { const x = 'b'; a(); }
+b();</code></pre>
+      <details class="result"><summary>결과 보기</summary><div class="out"><span class="o">'global'</span><span class="why">a의 [[Environment]]는 정의된 위치인 전역입니다. 호출한 b의 스코프와는 아무 관계가 없습니다.</span></div></details>
+    </section>
+
+    <section id="hoisting">
+      <h2><span class="n">02</span>호이스팅의 실체: 끌어올림이 아니라 먼저 등록</h2>
+      <p>코드는 실제로 위로 옮겨지지 않습니다. 엔진은 스코프의 코드를 실행하기 전에 <strong>선언 인스턴스화</strong> 단계를 거쳐 그 스코프의 모든 선언을 Environment Record에 먼저 등록합니다. 선언 종류마다 다른 것은 <strong>초기화 여부</strong>입니다.</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>선언</th><th>바인딩 생성</th><th>초기화</th><th>실행 전 접근하면</th></tr></thead>
+          <tbody>
+            <tr><td><code>function</code> 선언</td><td>O</td><td class="hl">함수 객체로 초기화</td><td>호출 가능</td></tr>
+            <tr><td><code>var</code></td><td>O</td><td><code>undefined</code>로 초기화</td><td><code>undefined</code></td></tr>
+            <tr><td><code>let</code> / <code>const</code> / <code>class</code></td><td>O</td><td class="hl">초기화 안 됨</td><td><code>ReferenceError</code></td></tr>
+            <tr><td>함수 표현식<br><code>var f = function(){}</code></td><td>var 규칙</td><td><code>undefined</code></td><td>호출하면 <code>TypeError</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+<pre><code class="language-js">console.log(a);
+console.log(b);
+var a = 1;
+let b = 2;</code></pre>
+      <div class="phases">
+        <div class="phase"><span class="t">선언 인스턴스화 직후</span>
+          <dl><dt>a</dt><dd>undefined</dd><dt>b</dt><dd>&lt;uninitialized&gt;</dd></dl>
+        </div>
+        <div class="phase"><span class="t">실행 끝난 후</span>
+          <dl><dt>a</dt><dd>1</dd><dt>b</dt><dd>2</dd></dl>
+        </div>
+      </div>
+      <details class="result"><summary>결과 보기</summary><div class="out"><span class="o">undefined</span>
+<span class="e">ReferenceError: Cannot access 'b' before initialization</span><span class="why">b는 바인딩이 이미 있지만 초기화 전입니다. 바인딩이 아예 없다면 "b is not defined"가 나와야 합니다. 에러 메시지가 다르다는 점에 주목하세요.</span></div></details>
+
+<pre><code class="language-js">foo();
+bar();
+function foo() { console.log('foo'); }
+var bar = function () { console.log('bar'); };</code></pre>
+      <details class="result"><summary>결과 보기</summary><div class="out"><span class="o">'foo'</span>
+<span class="e">TypeError: bar is not a function</span><span class="why">bar는 var 규칙에 따라 undefined로 초기화되어 있습니다. undefined를 호출했으므로 ReferenceError가 아니라 TypeError입니다.</span></div></details>
+
+      <div class="key">
+        <p><strong>핵심.</strong> let/const도 호이스팅됩니다. 바인딩은 미리 만들어지고 초기화만 되지 않은 상태입니다. 같은 이름의 <code>var</code>와 <code>function</code>이 함께 있으면 선언 단계에서는 함수가 우선하고, 이후 <strong>실행 단계의 할당문</strong>이 값을 덮어씁니다. 선언과 할당은 서로 다른 단계입니다.</p>
+      </div>
+    </section>
+
+    <section id="tdz">
+      <h2><span class="n">03</span>TDZ (Temporal Dead Zone)</h2>
+      <p>바인딩이 만들어진 시점부터 선언문이 실행되어 초기화되는 시점까지의 구간입니다. 이 구간에 접근하면 <code>ReferenceError</code>가 납니다. 이름에 <strong>Temporal(시간적)</strong>이 붙은 이유는, 코드상의 위치가 아니라 <mark>실행 시점</mark>의 문제이기 때문입니다.</p>
+
+<pre><code class="language-js">function read() { return v; } // 위치상으로는 선언보다 위
+const v = 1;
+console.log(read());</code></pre>
+      <details class="result"><summary>결과 보기</summary><div class="out"><span class="o">1</span><span class="why">read가 호출되는 시점에는 v가 이미 초기화되어 있습니다.</span></div></details>
+
+      <h3>TDZ가 생각보다 자주 드러나는 곳</h3>
+      <ul>
+        <li><strong><code>typeof</code>도 안전하지 않습니다.</strong> 선언되지 않은 변수는 <code>'undefined'</code>를 돌려주지만, TDZ에 있는 변수는 에러가 납니다.</li>
+        <li><strong>기본값 매개변수</strong>: 매개변수도 왼쪽부터 순서대로 초기화됩니다. <code>function f(a = b, b) {}</code>에서 <code>f()</code>를 호출하면 에러가 납니다.</li>
+        <li><strong>shadowing</strong>: 블록 안에서 같은 이름을 <code>let</code>으로 선언하면, 블록이 시작되는 순간부터 바깥 변수가 가려집니다.</li>
+        <li><strong>class</strong>: class 선언도 TDZ가 적용되므로 정의하기 전에 <code>new</code>할 수 없습니다.</li>
+      </ul>
+
+<pre><code class="language-js">console.log(typeof notDeclared);
+console.log(typeof later);
+let later = 1;</code></pre>
+      <details class="result"><summary>결과 보기</summary><div class="out"><span class="o">'undefined'</span>
+<span class="e">ReferenceError: Cannot access 'later' before initialization</span></div></details>
+    </section>
+
+    <section id="global">
+      <h2><span class="n">04</span>전역 스코프의 특이한 점</h2>
+      <p>전역 Environment Record는 두 부분으로 이뤄져 있습니다.</p>
+      <ul>
+        <li><strong>Object Record</strong>: <code>var</code>, <code>function</code> 선언이 들어갑니다. 그래서 <code>window</code>의 프로퍼티가 됩니다.</li>
+        <li><strong>Declarative Record</strong>: <code>let</code>, <code>const</code>, <code>class</code> 선언이 들어갑니다. 그래서 <code>window</code>에 없습니다.</li>
+      </ul>
+<pre><code class="language-js">var a = 1;   // window.a → 1
+let b = 2;   // window.b → undefined</code></pre>
+      <p>여러 <code>&lt;script&gt;</code> 태그는 전역 스코프를 공유합니다. 서로 다른 스크립트에서 같은 이름을 <code>let</code>으로 선언하면 SyntaxError가 납니다. ES 모듈은 파일마다 자체 모듈 스코프를 가지므로 이런 충돌이 없습니다.</p>
+    </section>
+
+    <section id="quiz" data-nomemo>
+      <h2><span class="n">Q</span>확인 질문</h2>
+      <p>답을 적고 <strong>답안 복사</strong>를 눌러 채팅에 붙여 주세요. 적은 내용은 이 브라우저에 임시 저장됩니다.</p>
+      <div class="quiz">
+        <div class="q">
+          <h3><span class="n">Q1</span>"let은 호이스팅되지 않는다"는 설명이 틀린 이유</h3>
+          <p>이를 증명하는 짧은 코드와 함께 설명해 주세요.</p>
+          <label for="a1">답안</label>
+          <textarea id="a1" data-q="Q1"></textarea>
+        </div>
+        <div class="q">
+          <h3><span class="n">Q2</span>출력 예측</h3>
+          <p>출력을 예측하고, 이유를 선언 단계와 실행 단계로 나눠 설명해 주세요.</p>
+<pre><code class="language-js">console.log(typeof fn);
+var fn = 1;
+function fn() {}
+console.log(typeof fn);</code></pre>
+          <label for="a2">답안</label>
+          <textarea id="a2" data-q="Q2"></textarea>
+        </div>
+        <div class="q">
+          <h3><span class="n">Q3</span>기본값 매개변수와 TDZ</h3>
+          <p>각 호출의 결과(반환값 또는 에러 종류)를 예측해 주세요.</p>
+<pre><code class="language-js">function f1(a = b, b = 1) { return [a, b]; }
+function f2(a = 1, b = a) { return [a, b]; }
+
+f1();
+f2();
+f1(5);</code></pre>
+          <label for="a3">답안</label>
+          <textarea id="a3" data-q="Q3"></textarea>
+        </div>
+      </div>
+      <div class="actions" style="margin-top:18px">
+        <button type="button" id="copy">답안 복사</button>
+        <button type="button" class="ghost" id="clear">지우기</button>
+        <span class="status" id="status" role="status"></span>
+      </div>
+      <p class="next">다음 단계: 답안 피드백 → 문제 세트 (출력 예측 + 버그 수정 구현, <code>js/01-scope-closure/</code>)</p>
+    </section>
+  </main>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>
+  if (window.hljs) hljs.highlightAll();
+
+  const KEY = 'js-w1-s1-answers';
+  const areas = [...document.querySelectorAll('textarea[data-q]')];
+  const status = document.getElementById('status');
+
+  try {
+    const saved = JSON.parse(localStorage.getItem(KEY) || '{}');
+    areas.forEach((t) => { if (saved[t.id]) t.value = saved[t.id]; });
+  } catch (e) {}
+
+  function save() {
+    try {
+      const data = {};
+      areas.forEach((t) => { data[t.id] = t.value; });
+      localStorage.setItem(KEY, JSON.stringify(data));
+    } catch (e) {}
+  }
+  areas.forEach((t) => t.addEventListener('input', save));
+
+  function buildText() {
+    return areas.map((t) => `[${t.dataset.q}]\n${t.value.trim() || '(미작성)'}`).join('\n\n');
+  }
+
+  document.getElementById('copy').addEventListener('click', () => {
+    const text = buildText();
+    navigator.clipboard.writeText(text).then(
+      () => { status.textContent = '복사했어요. 채팅에 붙여 넣어 주세요.'; },
+      () => {
+        areas[0].focus();
+        status.textContent = '복사가 막혀 있어요. 답안을 직접 선택해 복사해 주세요.';
+      }
+    );
+  });
+
+  document.getElementById('clear').addEventListener('click', () => {
+    areas.forEach((t) => { t.value = ''; });
+    save();
+    status.textContent = '답안을 지웠어요.';
+  });
+</script>
+<script>
+  // 섹션별 메모: artifact db의 notes/<섹션 id>에 저장, 없으면 이 브라우저에만 저장
+  (() => {
+    const LKEY = 'memos:js-w1-s1';
+    const boxes = new Map();
+    let notes = null;
+    let pushedLocal = false;
+
+    const readLocal = () => {
+      try { return JSON.parse(localStorage.getItem(LKEY) || '{}'); } catch (e) { return {}; }
+    };
+    const writeLocal = (id, text) => {
+      try {
+        const all = readLocal();
+        if (text.trim()) all[id] = text; else delete all[id];
+        localStorage.setItem(LKEY, JSON.stringify(all));
+      } catch (e) {}
+    };
+    const mark = (b) => b.aside.classList.toggle('has', b.ta.value.trim() !== '');
+
+    document.querySelectorAll('main section[id]').forEach((sec) => {
+      const body = document.createElement('div');
+      body.className = 'sec-body';
+      while (sec.firstChild) body.appendChild(sec.firstChild);
+      sec.classList.add('sec');
+      sec.appendChild(body);
+      if (sec.hasAttribute('data-nomemo')) return;
+
+      const h = sec.querySelector('h2')?.cloneNode(true);
+      h?.querySelector('.n')?.remove();
+      const aside = document.createElement('aside');
+      aside.className = 'memo';
+      aside.innerHTML = `<label for="memo-${sec.id}"><span>내 메모</span><span class="st" aria-live="polite"></span></label><textarea id="memo-${sec.id}" placeholder="헷갈리는 부분이나 질문을 적어 두세요"></textarea>`;
+      sec.appendChild(aside);
+
+      const b = {
+        ta: aside.querySelector('textarea'), st: aside.querySelector('.st'), aside,
+        title: h ? h.textContent.trim() : sec.id, timer: 0, saved: '', dirty: false, chain: Promise.resolve(),
+      };
+      boxes.set(sec.id, b);
+      b.ta.addEventListener('input', () => {
+        b.dirty = true;
+        mark(b);
+        b.st.textContent = '입력 중';
+        clearTimeout(b.timer);
+        b.timer = setTimeout(() => save(sec.id), 800);
+      });
+      b.ta.addEventListener('blur', () => {
+        if (!b.dirty) return;
+        clearTimeout(b.timer);
+        save(sec.id);
+      });
+    });
+
+    const local = readLocal();
+    boxes.forEach((b, id) => {
+      if (local[id]) { b.ta.value = local[id]; mark(b); }
+    });
+
+    function save(id) {
+      const b = boxes.get(id);
+      const text = b.ta.value;
+      b.dirty = false;
+      writeLocal(id, text);
+      if (!notes) { b.st.textContent = '이 브라우저에 저장됨'; return; }
+      if (text === b.saved) { b.st.textContent = '저장됨'; return; }
+      b.chain = b.chain.then(async () => {
+        try {
+          const ref = notes.doc(id);
+          if (text.trim()) await ref.set({ section: b.title, text, updatedAt: new Date().toISOString() });
+          else await ref.delete();
+          b.saved = text;
+          b.st.textContent = '저장됨';
+        } catch (e) {
+          b.st.textContent = e && e.code === 'quota_exceeded'
+            ? '저장 공간이 가득 찼어요'
+            : '서버 저장 실패 · 이 브라우저에만 저장됨';
+        }
+      });
+    }
+
+    if (!window.claude || typeof window.claude.use !== 'function') return;
+    window.claude.use('db').then((db) => {
+      if (!db) return;
+      notes = db.collection('notes');
+      notes.onSnapshot((snap) => {
+        snap.docs.forEach((d) => {
+          const b = boxes.get(d.id);
+          const data = d.data();
+          if (!b || !data) return;
+          const text = String(data.text ?? '');
+          b.saved = text;
+          if (!b.dirty && document.activeElement !== b.ta && b.ta.value !== text) {
+            b.ta.value = text;
+            writeLocal(d.id, text);
+            mark(b);
+          }
+        });
+        // 서버 연결 전에 이 브라우저에만 적어 둔 메모를 한 번 올림
+        if (!pushedLocal && !snap.metadata.fromCache) {
+          pushedLocal = true;
+          boxes.forEach((b, id) => {
+            if (b.ta.value.trim() && !snap.docs.some((d) => d.id === id)) save(id);
+          });
+        }
+      }, () => { notes = null; });
+    }, () => {});
+  })();
+</script>
